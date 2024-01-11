@@ -177,19 +177,9 @@ async function renderAndConvertAsync(browser) {
     const outputPath = pageConfig.outputPath;
     await fsExtra.ensureDir(path.dirname(outputPath));
 
-    const tempPath = outputPath + ".temp";
-
     console.log(`Rendering ${url} to image...`);
-    await renderUrlToImageAsync(browser, pageConfig, url, tempPath);
+    await renderUrlToImageAsync(browser, pageConfig, url, outputPath);
 
-    console.log(`Converting rendered screenshot of ${url} to grayscale png...`);
-    await convertImageToKindleCompatiblePngAsync(
-      pageConfig,
-      tempPath,
-      outputPath
-    );
-
-    fs.unlink(tempPath);
     console.log(`Finished ${url}`);
 
     if (
@@ -301,31 +291,4 @@ async function renderUrlToImageAsync(browser, pageConfig, url, path) {
       await page.close();
     }
   }
-}
-
-function convertImageToKindleCompatiblePngAsync(
-  pageConfig,
-  inputPath,
-  outputPath
-) {
-  return new Promise((resolve, reject) => {
-    gm(inputPath)
-      .options({
-        imageMagick: config.useImageMagick === true
-      })
-      .gamma(pageConfig.removeGamma ? 1.0/2.2 : 1.0)
-      .dither(pageConfig.dither)
-      .rotate("white", pageConfig.rotation)
-      .type(pageConfig.colorMode)
-      .level(pageConfig.blackLevel, pageConfig.whiteLevel)
-      .bitdepth(pageConfig.grayscaleDepth)
-      .quality(100)
-      .write(outputPath, (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-  });
 }

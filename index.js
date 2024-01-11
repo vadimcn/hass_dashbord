@@ -6,7 +6,7 @@ const { promises: fs } = require("fs");
 const fsExtra = require("fs-extra");
 const puppeteer = require("puppeteer");
 const { CronJob } = require("cron");
-const gm = require("gm");
+const crypto = require("crypto");
 
 // keep state of current battery level and whether the device is charging
 const batteryStore = {};
@@ -104,17 +104,27 @@ const batteryStore = {};
       const pageIndex = pageNumber - 1;
       const configPage = config.pages[pageIndex];
 
-      const data = await fs.readFile(configPage.outputPath);
       const stat = await fs.stat(configPage.outputPath);
+      const data = await fs.readFile(configPage.outputPath);
+      const hash = crypto.createHash("md5").update(data).digest('hex');
 
-      const lastModifiedTime = new Date(stat.mtime).toUTCString();
+      const ifNoneMatch = request.headers["if-none-match"];
+      const ifModifiedSince = new Date(request.headers["if-modified-since"]);
 
-      response.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": Buffer.byteLength(data),
-        "Last-Modified": lastModifiedTime
-      });
-      response.end(data);
+      if (ifNoneMatch == hash || ifModifiedSince > stat.mtime) {
+        console.log("Not modified");
+        response.writeHead(304, "Not Modified");
+        response.end();
+      } else {
+        const lastModifiedTime = new Date(stat.mtime).toUTCString();
+        response.writeHead(200, {
+          "Content-Type": "image/png",
+          "Content-Length": Buffer.byteLength(data),
+          "Last-Modified": lastModifiedTime,
+          "ETag": hash,
+        });
+        response.end(data);
+      }
 
       let pageBatteryStore = batteryStore[pageIndex];
       if (!pageBatteryStore) {

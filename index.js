@@ -236,6 +236,7 @@ async function renderUrlToImageAsync(browser, pageConfig, url, path) {
         value: "light"
       }
     ]);
+    await page.emulateTimezone(config.timezone);
 
     let size = {
       width: Number(pageConfig.renderingScreenSize.width),

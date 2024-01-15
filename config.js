@@ -47,6 +47,7 @@ module.exports = {
   port: process.env.PORT || 5000,
   renderingTimeout: process.env.RENDERING_TIMEOUT || 10000,
   language: process.env.LANGUAGE || "en",
+  timezone: process.env.TIMEZONE,
   debug: process.env.DEBUG === "true",
   ignoreCertificateErrors:
     process.env.UNSAFE_IGNORE_CERTIFICATE_ERRORS === "true",

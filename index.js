@@ -273,8 +273,9 @@ async function renderUrlToImageAsync(browser, pageConfig, url, path) {
     });
 
     if (pageConfig.renderingDelay > 0) {
-      await page.waitForTimeout(pageConfig.renderingDelay);
+      await new Promise(r => setTimeout(r, pageConfig.renderingDelay));
     }
+
     await page.screenshot({
       path,
       type: "png",
@@ -282,7 +283,8 @@ async function renderUrlToImageAsync(browser, pageConfig, url, path) {
         x: 0,
         y: 0,
         ...size
-      }
+      },
+      captureBeyondViewport: false
     });
   } catch (e) {
     console.error("Failed to render", e);

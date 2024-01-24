@@ -99,7 +99,11 @@ const batteryStore = {};
     try {
       // Log when the page was accessed
       const n = new Date();
-      console.log(`${n.toISOString()}: Image ${pageNumber} was accessed`);
+      console.log(`${n.toISOString()}: Image ${pageNumber} was accessed with ${url.search}`);
+
+      if (url.searchParams.has('forceRefresh')) {
+        await renderAndConvertAsync(browser);
+      }
 
       const pageIndex = pageNumber - 1;
       const configPage = config.pages[pageIndex];

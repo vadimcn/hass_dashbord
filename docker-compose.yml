@@ -1,23 +1,26 @@
-version: "3.8"
-
 services:
-  app:
-    image: sibbl/hass-lovelace-kindle-screensaver:latest
+  dashboard:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ...:/output
+    ports: 
+      - 5010:5000
     environment:
-      - HA_BASE_URL=https://your-path-to-home-assistant:8123
-      - HA_SCREENSHOT_URL=/lovelace?kiosk
-      - HA_ACCESS_TOKEN=eyJ0...
+      - HA_BASE_URL=...
+      - HA_SCREENSHOT_URL=...?kiosk
+      - HA_ACCESS_TOKEN=eyJ...
+      - HA_BATTERY_WEBHOOK=...
+      - LANGUAGE=en
+      - TIMEZONE=America/Los_Angeles
       - CRON_JOB=* * * * *
       - RENDERING_TIMEOUT=30000
       - RENDERING_DELAY=0
       - RENDERING_SCREEN_HEIGHT=800
       - RENDERING_SCREEN_WIDTH=600
-      - GRAYSCALE_DEPTH=8
-      - OUTPUT_PATH=/output/cover.png
-      - LANGUAGE=en
       - ROTATION=0
       - SCALING=1
-    ports:
-      - 5000:5000
-    volumes:
-      - ./output/:/output
+      - GRAYSCALE_DEPTH=8
+      - COLOR_MODE=TrueColor
+      - OUTPUT_PATH=/output/dashboard.png

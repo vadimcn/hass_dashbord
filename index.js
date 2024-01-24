@@ -68,11 +68,14 @@ const batteryStore = {};
     console.log("Starting first render...");
     await renderAndConvertAsync(browser);
     console.log("Starting rendering cronjob...");
-    new CronJob({
-      cronTime: config.cronJob,
-      onTick: () => renderAndConvertAsync(browser),
-      start: true
-    });
+    for (let cronTime of config.cronJob.split(';')) {
+      new CronJob({
+        cronTime: cronTime,
+        timeZone: config.timezone,
+        onTick: () => renderAndConvertAsync(browser),
+        start: true
+      });
+    }
   }
 
   const httpServer = http.createServer(async (request, response) => {

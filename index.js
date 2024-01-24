@@ -48,6 +48,7 @@ const batteryStore = {};
   };
 
   console.log("Adding authentication entry to browser's local storage...");
+  await page.waitForNavigation();
   await page.evaluate(
     (hassTokens, selectedLanguage) => {
       localStorage.setItem("hassTokens", hassTokens);
@@ -123,11 +124,23 @@ const batteryStore = {};
         response.writeHead(304, "Not Modified");
         response.end();
       } else {
-        const lastModifiedTime = new Date(stat.mtime).toUTCString();
+        const lastModifiedTime = new Date(stat.mtime);
+        const lastModifiedTimeLocal = lastModifiedTime.toLocaleString("en-US", {
+            year: "numeric",
+            month: "numeric",
+            day: "numeric",          
+            hour: "numeric",
+            minute: "numeric",
+            second: "numeric",
+            timeZoneName: "short",
+            timeZone: configPage.timezone,
+        });
+
         response.writeHead(200, {
           "Content-Type": "image/png",
           "Content-Length": Buffer.byteLength(data),
-          "Last-Modified": lastModifiedTime,
+          "Last-Modified": lastModifiedTime.toUTCString(),
+          "X-Last-Modified-Local": lastModifiedTimeLocal,
           "ETag": hash,
         });
         response.end(data);

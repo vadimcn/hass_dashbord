@@ -87,6 +87,7 @@ const batteryStore = {};
     // and get the battery level, if any
     // (see https://github.com/sibbl/hass-lovelace-kindle-screensaver/README.md for patch to generate it on Kindle)
     const batteryLevel = parseInt(url.searchParams.get("batteryLevel"));
+    const batteryVolts = parseFloat(url.searchParams.get("batteryVolts"));
     const isCharging = url.searchParams.get("isCharging");
     const pageNumber =
       pageNumberStr === "/" ? 1 : parseInt(pageNumberStr.substr(1));
@@ -105,7 +106,8 @@ const batteryStore = {};
       const n = new Date();
       console.log(`${n.toISOString()}: Image ${pageNumber} was accessed with ${url.search}`);
 
-      if (url.searchParams.has('forceRefresh')) {
+      let forceRefresh = url.searchParams.get('forceRefresh');
+      if (forceRefresh > 3) {
         await renderAndConvertAsync(browser);
       }
 
@@ -119,13 +121,14 @@ const batteryStore = {};
       const ifNoneMatch = request.headers["if-none-match"];
       const ifModifiedSince = new Date(request.headers["if-modified-since"]);
 
-      if (ifNoneMatch == hash || ifModifiedSince > stat.mtime) {
+      if (forceRefresh == null && (ifNoneMatch == hash || ifModifiedSince > stat.mtime)) {
         console.log("Not modified");
         response.writeHead(304, "Not Modified");
         response.end();
       } else {
         const lastModifiedTime = new Date(stat.mtime);
         const lastModifiedTimeLocal = lastModifiedTime.toLocaleString("en-US", {
+            weekday: "short",
             year: "numeric",
             month: "numeric",
             day: "numeric",          
@@ -150,12 +153,14 @@ const batteryStore = {};
       if (!pageBatteryStore) {
         pageBatteryStore = batteryStore[pageIndex] = {
           batteryLevel: null,
+          batteryVolts: null,
           isCharging: false
         };
       }
       if (!isNaN(batteryLevel) && batteryLevel >= 0 && batteryLevel <= 100) {
         if (batteryLevel !== pageBatteryStore.batteryLevel) {
           pageBatteryStore.batteryLevel = batteryLevel;
+          pageBatteryStore.batteryVolts = batteryVolts;
           console.log(
             `New battery level: ${batteryLevel} for page ${pageNumber}`
           );

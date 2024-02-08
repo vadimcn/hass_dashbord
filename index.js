@@ -8,9 +8,6 @@ const puppeteer = require("puppeteer");
 const { CronJob } = require("cron");
 const crypto = require("crypto");
 
-// keep state of current battery level and whether the device is charging
-const batteryStore = {};
-
 (async () => {
   if (config.pages.length === 0) {
     return console.error("Please check your configuration");
@@ -38,17 +35,16 @@ const batteryStore = {};
   console.log(`Visiting '${config.baseUrl}' to login...`);
   let page = await browser.newPage();
   await page.goto(config.baseUrl, {
-    timeout: config.renderingTimeout
+    timeout: config.renderingTimeout,
+    waitUntil: 'networkidle0',
   });
 
+  console.log("Adding authentication entry to browser's local storage...");
   const hassTokens = {
     hassUrl: config.baseUrl,
     access_token: config.accessToken,
     token_type: "Bearer"
   };
-
-  console.log("Adding authentication entry to browser's local storage...");
-  await page.waitForNavigation();
   await page.evaluate(
     (hassTokens, selectedLanguage) => {
       localStorage.setItem("hassTokens", hassTokens);
@@ -84,47 +80,40 @@ const batteryStore = {};
     const url = new URL(request.url, `http://${request.headers.host}`);
     // Check the page number
     const pageNumberStr = url.pathname;
-    // and get the battery level, if any
-    // (see https://github.com/sibbl/hass-lovelace-kindle-screensaver/README.md for patch to generate it on Kindle)
-    const batteryLevel = parseInt(url.searchParams.get("batteryLevel"));
-    const batteryVolts = parseFloat(url.searchParams.get("batteryVolts"));
-    const isCharging = url.searchParams.get("isCharging");
-    const pageNumber =
-      pageNumberStr === "/" ? 1 : parseInt(pageNumberStr.substr(1));
-    if (
-      isFinite(pageNumber) === false ||
-      pageNumber > config.pages.length ||
-      pageNumber < 1
+    const pageNumber = pageNumberStr === "/" ? 1 : parseInt(pageNumberStr.substring(1));
+    if (!isFinite(pageNumber) ||
+        pageNumber > config.pages.length ||
+        pageNumber < 1
     ) {
       console.log(`Invalid request: ${request.url} for page ${pageNumber}`);
       response.writeHead(400);
       response.end("Invalid request");
       return;
     }
+    const pageIndex = pageNumber - 1;
+    const pageConfig = config.pages[pageIndex];
+    
     try {
       // Log when the page was accessed
       const n = new Date();
-      console.log(`${n.toISOString()}: Image ${pageNumber} was accessed with ${url.search}`);
+      console.log(`Image ${pageNumber} was accessed with ${url.search}`);
 
       let forceRefresh = url.searchParams.get('forceRefresh');
       if (forceRefresh > 3) {
         await renderAndConvertAsync(browser);
       }
 
-      const pageIndex = pageNumber - 1;
-      const configPage = config.pages[pageIndex];
-
-      const stat = await fs.stat(configPage.outputPath);
-      const data = await fs.readFile(configPage.outputPath);
+      const stat = await fs.stat(pageConfig.outputPath);
+      const data = await fs.readFile(pageConfig.outputPath);
       const hash = crypto.createHash("md5").update(data).digest('hex');
 
       const ifNoneMatch = request.headers["if-none-match"];
       const ifModifiedSince = new Date(request.headers["if-modified-since"]);
 
       if (forceRefresh == null && (ifNoneMatch == hash || ifModifiedSince > stat.mtime)) {
-        console.log("Not modified");
         response.writeHead(304, "Not Modified");
         response.end();
+        console.log("Response: 304 Not Modified");
       } else {
         const lastModifiedTime = new Date(stat.mtime);
         const lastModifiedTimeLocal = lastModifiedTime.toLocaleString("en-US", {
@@ -136,7 +125,7 @@ const batteryStore = {};
             minute: "numeric",
             second: "numeric",
             timeZoneName: "short",
-            timeZone: configPage.timezone,
+            timeZone: pageConfig.timezone,
         });
 
         response.writeHead(200, {
@@ -147,42 +136,31 @@ const batteryStore = {};
           "ETag": hash,
         });
         response.end(data);
-      }
-
-      let pageBatteryStore = batteryStore[pageIndex];
-      if (!pageBatteryStore) {
-        pageBatteryStore = batteryStore[pageIndex] = {
-          batteryLevel: null,
-          batteryVolts: null,
-          isCharging: false
-        };
-      }
-      if (!isNaN(batteryLevel) && batteryLevel >= 0 && batteryLevel <= 100) {
-        if (batteryLevel !== pageBatteryStore.batteryLevel) {
-          pageBatteryStore.batteryLevel = batteryLevel;
-          pageBatteryStore.batteryVolts = batteryVolts;
-          console.log(
-            `New battery level: ${batteryLevel} for page ${pageNumber}`
-          );
-        }
-
-        if (
-          (isCharging === "Yes" || isCharging === "1") &&
-          pageBatteryStore.isCharging !== true) {
-          pageBatteryStore.isCharging = true;
-          console.log(`Battery started charging for page ${pageNumber}`);
-        } else if (
-          (isCharging === "No" || isCharging === "0") &&
-          pageBatteryStore.isCharging !== false
-        ) {
-          console.log(`Battery stopped charging for page ${pageNumber}`);
-          pageBatteryStore.isCharging = false;
-        }
+        console.log("Response: 200 OK");
       }
     } catch (e) {
       console.error(e);
       response.writeHead(404);
       response.end("Image not found");
+    }
+
+    // Send battery status to HA
+    try {
+      if (pageConfig.batteryWebHook) {
+        const batteryStatus = {
+          batteryLevel: parseInt(url.searchParams.get("batteryLevel")),
+          batteryVolts: parseFloat(url.searchParams.get("batteryVolts")),
+          isCharging:   url.searchParams.get("isCharging"),
+        };
+
+        sendBatteryStatusToHomeAssistant(
+          pageIndex,
+          batteryStatus,
+          pageConfig.batteryWebHook
+        );
+      }
+    } catch (e) {
+      console.error(e);
     }
   });
 
@@ -195,7 +173,6 @@ const batteryStore = {};
 async function renderAndConvertAsync(browser) {
   for (let pageIndex = 0; pageIndex < config.pages.length; pageIndex++) {
     const pageConfig = config.pages[pageIndex];
-    const pageBatteryStore = batteryStore[pageIndex];
 
     const url = `${config.baseUrl}${pageConfig.screenShotUrl}`;
 
@@ -206,32 +183,20 @@ async function renderAndConvertAsync(browser) {
     await renderUrlToImageAsync(browser, pageConfig, url, outputPath);
 
     console.log(`Finished ${url}`);
-
-    if (
-      pageBatteryStore &&
-      pageBatteryStore.batteryLevel !== null &&
-      pageConfig.batteryWebHook
-    ) {
-      sendBatteryLevelToHomeAssistant(
-        pageIndex,
-        pageBatteryStore,
-        pageConfig.batteryWebHook
-      );
-    }
   }
 }
 
-function sendBatteryLevelToHomeAssistant(
+function sendBatteryStatusToHomeAssistant(
   pageIndex,
-  batteryStore,
+  batteryStatus,
   batteryWebHook
 ) {
-  const batteryStatus = JSON.stringify(batteryStore);
+  const batteryStatusStr = JSON.stringify(batteryStatus);
   const options = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Content-Length": Buffer.byteLength(batteryStatus)
+      "Content-Length": Buffer.byteLength(batteryStatusStr)
     },
     rejectUnauthorized: !config.ignoreCertificateErrors
   };
@@ -247,7 +212,7 @@ function sendBatteryLevelToHomeAssistant(
   req.on("error", (e) => {
     console.error(`Update ${pageIndex} at ${url} error: ${e.message}`);
   });
-  req.write(batteryStatus);
+  req.write(batteryStatusStr);
   req.end();
 }
 
